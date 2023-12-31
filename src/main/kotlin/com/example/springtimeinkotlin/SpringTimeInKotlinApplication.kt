@@ -1,21 +1,11 @@
 package com.example.springtimeinkotlin
 
-import jakarta.persistence.Entity
-import jakarta.persistence.GeneratedValue
-import jakarta.persistence.Id
-import jakarta.persistence.Table
-import org.hibernate.annotations.GenericGenerator
+import com.example.springtimeinkotlin.kx.uuid
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
-import org.springframework.data.jpa.repository.Query
-import org.springframework.data.repository.CrudRepository
-import org.springframework.stereotype.Repository
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RestController
-import java.util.*
+import org.springframework.web.bind.annotation.*
 
 @SpringBootApplication
 class SpringTimeInKotlinApplication
@@ -29,6 +19,9 @@ class MessageResource(val messageService: MessageService) {
     @GetMapping
     fun index(): List<Message> = messageService.findMessage()
 
+    @GetMapping("/{id}")
+    fun index(@PathVariable id: String): List<Message> = messageService.findMessageById(id)
+
     @PostMapping
     fun post(@RequestBody message: Message) {
         messageService.post(message)
@@ -36,35 +29,26 @@ class MessageResource(val messageService: MessageService) {
 }
 
 @Service
-class MessageService(val messageRepository: MessageRepository) {
+class MessageService(val db: JdbcTemplate) {
 
-    fun findMessage(): List<Message> = messageRepository.findMessage()
+    fun findMessage(): List<Message> =
+        //trailing lambda use
+        db.query("select * from messages") { rs, _ ->
+            Message(rs.getString("id"), rs.getString("text"))
+        }
+
+    fun findMessageById(id: String): List<Message> =
+        db.query("select * from messages where id = ?", { rs, _ ->
+            Message(rs.getString("id"), rs.getString("text"))
+        }, id)
 
     fun post(message: Message) {
-        println(message)
-        messageRepository.save(message)
+        db.update(
+            "insert into messages values ( ?, ?)",
+            message.id ?: message.text.uuid(), //extension function use
+            message.text
+        )
     }
 }
 
-@Repository
-interface MessageRepository : CrudRepository<Message, String> {
-
-    @Query("select * from messages", nativeQuery = true)
-    fun findMessage(): List<Message>
-}
-
-@Entity
-@Table(name = "messages")
-data class Message(
-    @Id
-    @GeneratedValue(generator = "UUID")
-    @GenericGenerator(
-        name = "UUID",
-        strategy = "org.hibernate.id.UUIDGenerator"
-    )
-    val id: UUID? = null,
-
-    val text: String
-) {
-    constructor() : this(UUID.randomUUID(), "")
-}
+data class Message(val id: String?, val text: String)
